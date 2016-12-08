@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <script type="text/javascript">
+    window.mobileUtil = (function(win, doc) {
+      var UA        = navigator.userAgent,
+          isAndroid = /android|adr/gi.test(UA),
+          isIos     = /iphone|ipod|ipad/gi.test(UA) && !isAndroid, // 据说某些国产机的UA会同时包含 android iphone 字符
+          isMobile  = isAndroid || isIos; // 粗略的判断
+
+      return {
+        isAndroid : isAndroid,
+        isIos     : isIos,
+        isMobile  : isMobile,
+
+        isNewsApp : /NewsApp\/[\d\.]+/gi.test(UA),
+        isWeixin  : /MicroMessenger/gi.test(UA),
+        isQQ      : /QQ\/\d/gi.test(UA),
+        isYixin   : /YiXin/gi.test(UA),
+        isWeibo   : /Weibo/gi.test(UA),
+        isTXWeibo : /T(?:X|encent)MicroBlog/gi.test(UA),
+
+        tapEvent : isMobile ? 'tap' : 'click',
+
+        /**
+         * 缩放页面
+         */
+        fixScreen : function() {
+          var metaEl     = doc.querySelector('meta[name="viewport"]'),
+              metaCtt    = metaEl ? metaEl.content : '',
+              matchScale = metaCtt.match(/initial\-scale=([\d\.]+)/),
+              matchWidth = metaCtt.match(/width=([^,\s]+)/);
+
+          if (!metaEl) { // REM
+            var docEl    = doc.documentElement,
+                maxwidth = docEl.dataset.mw || 750, // 每 dpr 最大页面宽度
+                dpr      = 1,
+                scale    = 1/dpr,
+                tid;
+
+            docEl.removeAttribute('data-mw');
+            docEl.dataset.dpr = dpr;
+            metaEl            = doc.createElement('meta');
+            metaEl.name       = 'viewport';
+            metaEl.content    = fillScale(scale);
+            docEl.firstElementChild.appendChild(metaEl);
+
+            var refreshRem = function() {
+              var width = docEl.getBoundingClientRect().width;
+              if (width/dpr > maxwidth) {
+                width = maxwidth*dpr;
+              }
+              var rem              = width/7.5;
+              docEl.style.fontSize = rem+'px';
+            };
+
+            win.addEventListener('resize', function() {
+              clearTimeout(tid);
+              tid = setTimeout(refreshRem, 300);
+            }, false);
+            win.addEventListener('pageshow', function(e) {
+              if (e.persisted) {
+                clearTimeout(tid);
+                tid = setTimeout(refreshRem, 300);
+              }
+            }, false);
+
+            refreshRem();
+          } else if (isMobile && !matchScale && (matchWidth && matchWidth[1]!='device-width')) { // 定宽
+            var width = parseInt(matchWidth[1]),
+                iw    = win.innerWidth || width,
+                ow    = win.outerWidth || iw,
+                sw    = win.screen.width || iw,
+                saw   = win.screen.availWidth || iw,
+                ih    = win.innerHeight || width,
+                oh    = win.outerHeight || ih,
+                ish   = win.screen.height || ih,
+                sah   = win.screen.availHeight || ih,
+                w     = Math.min(iw, ow, sw, saw, ih, oh, ish, sah),
+                scale = w/width;
+
+            if (scale < 1) {
+              metaEl.content = metaCtt+','+fillScale(scale);
+            }
+          }
+
+          function fillScale(scale) {
+            return 'initial-scale='+scale+',maximum-scale='+scale+',minimum-scale='+scale+',user-scalable=no';
+          }
+        },
+
+        /**
+         * 转href参数成键值对
+         * @param href {string} 指定的href，默认为当前页href
+         * @returns {object} 键值对
+         */
+        getSearch : function(href) {
+          href     = href || win.location.search;
+          var data = {},
+              reg  = new RegExp("([^?=&]+)(=([^&]*))?", "g");
+          href && href.replace(reg, function($0, $1, $2, $3) {
+            data[$1] = $3;
+          });
+          return data;
+        }
+      };
+    })(window, document);
+
+    // 默认直接适配页面
+    mobileUtil.fixScreen();
+  </script>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>169班同学录</title>
+  <script src="http://cdn.bootcss.com/vue/1.0.24-csp/vue.min.js"></script>
+  <style>
+    body {
+      font-family: '微软雅黑';
+      font-size: .5rem;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      width: 100%;
+      height: 4rem;
+    }
+
+    header img {
+      width: 100%;
+    }
+
+    .data {
+      margin-bottom: .8rem;
+    }
+
+    .data_biao {
+      width: 100%;
+      height: auto;
+      position: relative;
+      left: -.1rem;
+    }
+
+    .data_biao::after {
+      content: '';
+      display: block;
+      clear: both;
+    }
+
+    .data_text {
+      width: 30%;
+      float: left;
+    }
+
+    .data_ex {
+      width: 70%;
+      float: left;
+      background: none;
+    }
+
+    .data .p {
+      color: #3b94ca;
+      text-align: center;
+      font-size: .40rem;
+      margin-bottom: .30rem;
+    }
+
+    .data .p span {
+      margin-left: .30rem;
+      padding-right: .2rem;
+    }
+
+    .data_text {
+      padding-right: .3rem;
+      box-sizing: border-box;
+      border-right: 2px solid #94cffa;
+    }
+
+    .item {
+      font-size: .36rem;
+      color: #555555;
+      text-align: right;
+      height: .8rem;
+      line-height: .8rem;
+    }
+
+    .ex {
+      width: 100%;
+      height: .8rem;
+      padding: .19rem 0;
+      box-sizing: border-box;
+      background: none;
+      z-index: -1;
+      position: static;
+    }
+
+    .move {
+      width: 20%;
+      height: 100%;
+      display: block;
+      background: #94cffa;
+      position: relative;
+    }
+
+    .move.dage {
+      background: #ef8e81;
+      width: 80%;
+    }
+
+    .move_text {
+      position: absolute;
+      right: -.5rem;
+      font-size: .30rem;
+      line-height: .42rem;
+      color: #d8d8d8;
+    }
+
+    .data_ex {
+      position: relative;
+    }
+
+    .blue_s,
+    .or_s {
+      position: absolute;
+      border-left: 1px dashed #3b94ca;
+      width: 1px;
+      height: 100%;
+      left: 64.9%;
+      top: 0;
+      display: block;
+      z-index: -1;
+      /*background: #3b94ca;*/
+    }
+
+    .or_s {
+      left: 100%;
+      border-color: #dddddd;
+    }
+
+    .young {
+      font-size: .36rem;
+      text-align: center;
+      /*padding-top: .5rem;*/
+      line-height: 1.8rem;
+      position: relative;
+      top: .4rem;
+    }
+
+    .dian {
+      text-align: center;
+      font-size: .40rem;
+      margin-bottom: .5rem;
+    }
+
+    .d_img {
+      width: 100%;
+      height: .50rem;
+      background: url(/images/txtyes.png);
+      background-repeat: no-repeat;
+      background-size: 1.6rem .5rem;
+      background-position: center center;
+    }
+
+    .lh_y {
+      line-height: .8rem;
+    }
+
+    .biao {
+      width: 100%;
+      height: 7rem;
+    }
+
+    .biao_tr {
+      width: 100%;
+      height: .74rem;
+      border-bottom: 2px solid #fff;
+      line-height: .74rem;
+      text-align: center;
+    }
+
+    .b_wrap {
+      width: 100%;
+      height: auto;
+      background: -webkit-linear-gradient(#eaf4fc, #f5fafd);
+    }
+
+    #app {
+      width: 100%;
+      height: auto;
+      background: -webkit-linear-gradient(#eaf4fc, #f5fafd);
+    }
+
+    .biao_td {
+      width: 50%;
+      height: 100%;
+      float: left;
+      font-size: .34rem;
+    }
+
+    .biao_td:nth-of-type(1) {
+      border-right: 2px solid #fff;
+      box-sizing: border-box;
+    }
+
+    .choose_s {
+      border: 2px solid #54b8e5;
+      position: relative;
+    }
+
+    .choose_m {
+      background: #94cffa;
+      position: relative;
+      animation: pulse both 1s infinite alternate;
+    }
+
+    .choose_m::before {
+      content: '';
+      position: absolute;
+      width: 1.10rem;
+      height: .90rem;
+      background: url(/images/price2.png);
+      background-size: 1.10rem .90rem;
+      display: block;
+      position: absolute;
+      top: -.1rem;
+      left: -.3rem;
+    }
+
+    .choose_s::before {
+      content: '';
+      position: absolute;
+      width: .8rem;
+      height: .5rem;
+      background: url(/images/price1.png);
+      background-size: .8rem .5rem;
+      display: block;
+      position: absolute;
+      top: -.1rem;
+      left: -.3rem;
+    }
+
+    #footer {
+      width: 100%;
+      height: auto;
+      margin: .6rem 0;
+    }
+
+    .f_text {
+      text-align: center;
+      font-size: .34rem;
+      color: #555555;
+      word-spacing: 1.2;
+    }
+
+    .f_blue {
+      color: #54a8e5;
+      font-size: .6rem;
+    }
+
+    .f_button,
+    .u_button {
+      width: 100%;
+      height: 2rem;
+    }
+
+    .u_button {
+      height: 2.5rem;
+      margin-bottom: .30rem;
+    }
+
+    .f_button span,
+    .u_button span {
+      display: block;
+      width: 70%;
+      background: #94cffa;
+      color: #fff;
+      height: .88rem;
+      text-align: center;
+      line-height: .88rem;
+      border-radius: .15rem;
+      margin: 1rem auto;
+      font-size: .40rem;
+      margin-bottom: .3rem;
+      letter-spacing: .04rem;
+    }
+
+    .u_button span {
+      margin: .3rem auto;
+    }
+
+    .f_text_min,
+    .u_text_min {
+      font-size: .30rem;
+      color: #9d9d9d;
+      text-align: center;
+      letter-spacing: .01rem;
+    }
+
+    .u_button.back::before {
+      content: '';
+      width: 3.7rem;
+      height: .45rem;
+      display: block;
+      background: url(/images/txtbegin.png);
+      background-size: 100%;
+      margin-left: .30rem;
+      box-sizing: border-box;
+    }
+
+    .u_button.batter::before {
+      content: '';
+      width: 3.7rem;
+      height: .45rem;
+      display: block;
+      background: url(/images/txtbatter.png);
+      background-size: 100%;
+      margin-left: .30rem;
+      box-sizing: border-box;
+    }
+
+    @-webkit-keyframes pulse {
+      from {
+        -webkit-transform: scale3d(1, 1, 1);
+        transform: scale3d(1, 1, 1);
+      }
+      50% {
+        -webkit-transform: scale3d(1.05, 1.05, 1.05);
+        transform: scale3d(1.05, 1.05, 1.05);
+      }
+      to {
+        -webkit-transform: scale3d(1, 1, 1);
+        transform: scale3d(1, 1, 1);
+      }
+    }
+
+    .slogan {
+      width: 60%;
+      height: 40%;
+      position: absolute;
+      top: 75%;
+      line-height: 1.5;
+      text-align: left;
+      margin-left: .3rem;
+    }
+
+    .slogan span {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <header>
+    <img src="./images/169.png" alt="">
+  </header>
+  <section class="advise biao yes">
+    <div class="b_wrap">
+      <div class="biao_tr">169班电话簿</div>
+      <div class="biao_tr">
+        <div class="biao_td">姓名</div>
+        <div class="biao_td">电话</div>
+      </div>
+      <div class="biao_tr" v-for='item in addresslist'>
+        <div class="biao_td" v-html='item.name'></div>
+        <div class="biao_td" v-html='item.tel'></div>
+
+      </div>
+    </div>
+  </section>
+</div>
+
+</body>
+<script>
+  new Vue({
+    el   : '#app',
+    data : {
+      addresslist : [
+        // a
+        // b
+        // c
+        { name : '成鑫', tel : '18903417655' },
+        { name : '曹军祥', tel : '15109230224' },
+        { name : '常芝瑞', tel : '' },
+        { name : '成艳', tel : '' },
+        { name : '曹彩霞', tel : '' },
+        { name : '崔贝贝', tel : '' },                
+        // d
+        // e
+        // f
+        { name : '樊杰', tel : '13333419855' },
+        // g
+        { name : '高鹏', tel : '18235886578' },
+        { name : '高瑜', tel : '18734813626' },
+        { name : '高玙', tel : '18335849046' },
+        { name : '郭伟芳', tel : '' },
+        { name : '高英杰', tel : '' },
+        { name : '郭胖胖', tel : '' },
+        // h
+        { name : '霍杨柳', tel : '15234105327' },
+        { name : '郝善文', tel : '' },
+        { name : '郝鸿董', tel : '' },
+        // i
+        // j
+        { name : '贾建国', tel : '' },
+        // k
+        // l
+        { name : '刘蔚', tel : '' },
+        { name : '刘伟星', tel : '13333479237' },
+        { name : '李志宏', tel : '15392589608' },
+        { name : '刘致源', tel : '15834108547' },
+        { name : '李许峰', tel : '18234438152' },
+        { name : '李敏', tel : '' },
+        { name : '李乐乐', tel : '' },
+        { name : '李大钊', tel : '' },
+        { name : '李晶', tel : '' },
+        { name : '李鑫', tel : '' },
+        // m
+        { name : '苗艳军', tel : '18334798284' },
+        { name : '苗强强', tel : '' },
+        { name : '苗壮壮', tel : '' },
+        { name : '苗艳军', tel : '18334798284' },
+        { name : '苗新伟', tel : '' },
+        // n
+        { name : '牛景博', tel : '' },
+        // o
+        // p
+        // q
+        { name : '秦瑞远', tel : '13643691507' },
+        { name : '秦碧远', tel : '18734189815' },
+        // r
+        // s
+        // t
+        // u
+        // v
+        // w
+        { name : '武煜', tel : '' },
+        { name : '魏振国', tel : '' },
+        { name : '王昕', tel : '18535150226' },
+        { name : '王鑫', tel : '' },
+        { name : '王勇', tel : '' },
+        { name : '王霞', tel : '' },
+        // x
+        { name : '辛峰', tel : '15235897075' },
+        { name : '辛飞', tel : '15835895722' },
+        // y
+        { name : '杨丽芳', tel : '' },
+        { name : '杨晓霞', tel : '' },
+        // z
+        { name : '赵雪', tel : '' },
+      ]
+    }
+  })
+</script>
+
+</html>
